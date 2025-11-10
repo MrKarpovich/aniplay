@@ -1,70 +1,107 @@
+# -*- coding: utf-8 -*-
+
+"""
+Скрипт для автоматического создания плейлиста playlist.m3u
+из видеофайлов в выбранной папке и запуска его в VLC.
+"""
+
 import re
 import subprocess
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
-
+from typing import List, Optional, Union
 
 # Поддерживаемые расширения видео
-VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.webm', '.mov', '.flv', '.wmv'}
+VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".webm", ".mov", ".flv", ".wmv"}
 
 
-def natural_sort_key(s):
-    """Сортирует строки с учётом чисел: [2] перед [10]"""
+def natural_sort_key(s: Union[str, Path]) -> List[Union[str, int]]:
+    """
+    Возвращает ключ сортировки, учитывающий числа.
+
+    Пример:
+        "серия 2" будет идти перед "серия 10".
+    """
+    text = str(s)
     return [
-        int(text) if text.isdigit() else text.lower()
-        for text in re.split(r'(\d+)', str(s))
+        int(part) if part.isdigit() else part.lower()
+        for part in re.split(r"(\d+)", text)
     ]
 
 
-def find_vlc_path():
-    """Ищет vlc.exe в стандартных местах установки на Windows"""
+def find_vlc_path() -> Optional[Path]:
+    """
+    Ищет исполняемый файл VLC в стандартных местах установки Windows.
+
+    Returns:
+        Optional[Path]: путь к VLC, если найден.
+    """
     candidates = [
-        r"C:\Program Files\VideoLAN\VLC\vlc.exe",
-        r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+        Path(r"C:\Program Files\VideoLAN\VLC\vlc.exe"),
+        Path(r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe"),
     ]
     for path in candidates:
-        if Path(path).exists():
-            return Path(path)
+        if path.exists():
+            return path
     return None
 
 
-def create_playlist(folder_path: Path) -> Path | None:
-    """Создаёт playlist.m3u в указанной папке"""
-    # Собираем видеофайлы
+def create_playlist(folder_path: Path) -> Optional[Path]:
+    """
+    Создаёт файл playlist.m3u в указанной папке.
+
+    Args:
+        folder_path (Path): путь к папке с видеофайлами.
+
+    Returns:
+        Optional[Path]: путь к созданному плейлисту или None, если ошибка.
+    """
     video_files = [
-        f for f in folder_path.iterdir()
+        f
+        for f in folder_path.iterdir()
         if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
     ]
 
     if not video_files:
-        messagebox.showwarning("⚠️ Нет видео", "В выбранной папке не найдено ни одного видеофайла.")
+        messagebox.showwarning(
+            "⚠️ Нет видео",
+            "В выбранной папке не найдено ни одного видеофайла.",
+        )
         return None
 
-    # Сортируем естественным образом
     video_files.sort(key=natural_sort_key)
-
-    # Пишем .m3u
     playlist_path = folder_path / "playlist.m3u"
+
     try:
-        with open(playlist_path, 'w', encoding='utf-8') as f:
-            f.write("#EXTM3U\n")
+        with open(playlist_path, "w", encoding="utf-8") as file:
+            file.write("#EXTM3U\n")
             for vf in video_files:
-                f.write(f"#EXTINF:-1, {vf.name}\n")
-                f.write(f"{vf.name}\n")
+                file.write(f"#EXTINF: -1, {vf.name}\n{vf.name}\n")
         return playlist_path
-    except OSError as e:
-        messagebox.showerror("❌ Ошибка", f"Не удалось создать плейлист:\n{e}")
+    except OSError as exc:
+        messagebox.showerror(
+            "❌ Ошибка",
+            f"Не удалось создать плейлист: \n{exc}",
+        )
         return None
 
 
 def launch_with_vlc(playlist_path: Path) -> bool:
-    """Запускает плейлист в VLC, если он найден"""
+    """
+    Запускает VLC с указанным плейлистом, если VLC найден.
+
+    Args:
+        playlist_path (Path): путь к .m3u файлу.
+
+    Returns:
+        bool: True, если запуск успешен.
+    """
     vlc_path = find_vlc_path()
-    if not vlc_path:
+    if vlc_path is None:
         return False
+
     try:
-        # Запускаем VLC в фоне — скрипт завершится сразу
         subprocess.Popen(
             [str(vlc_path), str(playlist_path)],
             creationflags=subprocess.CREATE_NO_WINDOW,
@@ -77,35 +114,33 @@ def launch_with_vlc(playlist_path: Path) -> bool:
         return False
 
 
-def main():
-    # Скрываем основное окно Tkinter
+def main() -> None:
+    """Основная функция выбора папки, создания и запуска плейлиста."""
     root = tk.Tk()
     root.withdraw()
 
-    # Открываем проводник для выбора папки
     folder = filedialog.askdirectory(
         initialdir=r"E:\Видео\anime",
         title="📁 Выберите папку с аниме (там должны быть серии)",
     )
-
     if not folder:
-        return  # Пользователь отменил выбор
+        return
 
     folder_path = Path(folder)
     playlist_path = create_playlist(folder_path)
-    if not playlist_path:
+    if playlist_path is None:
         return
 
-    # Считаем количество серий
-    series_count = len([
-        f for f in folder_path.iterdir()
+    series_count = sum(
+        1
+        for f in folder_path.iterdir()
         if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS
-    ])
+    )
 
-    # Спрашиваем, запускать ли
     launch = messagebox.askyesno(
         "🎬 Плейлист готов!",
-        f"Создан playlist.m3u\nВсего серий: {series_count}\n\nЗапустить в VLC сейчас?",
+        f"Создан playlist.m3u\nВсего серий: {series_count}\n\n"
+        "Запустить в VLC сейчас?",
     )
 
     if launch:
