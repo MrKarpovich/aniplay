@@ -4,13 +4,15 @@
 Скрипт для автоматического создания плейлиста playlist.m3u
 из видеофайлов в выбранной папке и запуска его в VLC.
 """
-
+import json
 import re
 import subprocess
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from typing import List, Optional, Union
+
+CONFIG_PATH = Path(__file__).with_name("config.json")
 
 # Поддерживаемые расширения видео
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".webm", ".mov", ".flv", ".wmv"}
@@ -45,6 +47,27 @@ def find_vlc_path() -> Optional[Path]:
         if path.exists():
             return path
     return None
+
+
+def load_last_folder() -> Optional[str]:
+    """Загружает последний путь из config.json."""
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("last_folder")
+        except (OSError, json.JSONDecodeError):
+            return None
+    return None
+
+
+def save_last_folder(folder_path: Path) -> None:
+    """Сохраняет последний выбранный путь."""
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump({"last_folder": str(folder_path)}, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
 
 
 def create_playlist(folder_path: Path) -> Optional[Path]:
@@ -119,13 +142,16 @@ def main() -> None:
     root = tk.Tk()
     root.withdraw()
 
+    initial_dir = load_last_folder() or str(Path.home())
     folder = filedialog.askdirectory(
-        initialdir=r"E:\Видео\anime",
-        title="📁 Выберите папку с аниме (там должны быть серии)",
+        initialdir=initial_dir,
+        title="📁 Выберите папку с видео (например, с аниме)",
     )
+
     if not folder:
         return
 
+    save_last_folder(Path(folder))
     folder_path = Path(folder)
     playlist_path = create_playlist(folder_path)
     if playlist_path is None:
